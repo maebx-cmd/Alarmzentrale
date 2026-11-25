@@ -38,6 +38,10 @@ Xiaomi/Huawei: Autostart erlauben, Akku-Sparmodus „Keine Einschränkungen“.
 - Solange die App offen ist, geht der Bildschirm nicht aus.
 - Die Statusseite zeigt „erreichbar“, solange die letzte Meldung jünger als 75 s ist.
 
+## Wecker (offline)
+In der App oben: „+ Wecker hinzufügen“ → Uhrzeit → Wochentage (nichts gewählt = einmalig). Antippen = ändern, lange drücken = löschen, Schalter = an/aus.
+Läuft ohne Internet über den System-Wecker, übersteht Tiefschlaf und Neustart (wird schon vor dem Entsperren neu gestellt). Klingelt mit dem Weckton und lässt sich nur per QR-Code abschalten. Kein Schlummern.
+
 ## Notfall-Storno
 Auf der Statusseite erscheint bei einer laufenden oder noch nicht zugestellten Auslösung „Notfall: aus der Ferne abstellen“ (eigener 4-stelliger PIN, nur als Hash im Worker). Das Gerät schaltet beim nächsten Abruf ab, die Seite zeigt „Aus der Ferne abgestellt“.
 

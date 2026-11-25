@@ -133,9 +133,10 @@ public class AlarmActivity extends Activity {
     private void render() {
         boolean alarm = Store.TYPE_ALARM.equals(Store.type(this));
         big.setText(alarm ? "ALARM" : "WECKEN");
-        sub.setText(alarm ? "Es wurde ein ALARM ausgelöst!" : "Nur Weckruf – kein Alarm");
+        String label = Store.label(this);
+        sub.setText(alarm ? "Es wurde ein ALARM ausgelöst!" : (label.isEmpty() ? "Nur Weckruf – kein Alarm" : label + " – kein Alarm"));
         long since = Store.since(this);
-        time.setText(since > 0 ? "ausgelöst um " + new SimpleDateFormat("HH:mm:ss", Locale.GERMANY).format(new Date(since)) + " Uhr" : "");
+        time.setText(since > 0 ? (label.isEmpty() || alarm ? "ausgelöst um " : "seit ") + new SimpleDateFormat("HH:mm:ss", Locale.GERMANY).format(new Date(since)) + " Uhr" : "");
         int a, b2;
         if (alarm) { a = 0xFFE5322D; b2 = 0xFF000000; } else { a = 0xFF1F6FD6; b2 = 0xFF0A2340; }
         root.setBackgroundColor(scanning ? b2 : (blink ? a : b2));

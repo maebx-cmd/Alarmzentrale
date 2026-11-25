@@ -32,6 +32,7 @@ public final class Store {
     public static boolean active(Context c) { return prefs(c).getBoolean("active", false); }
     public static String type(Context c) { return prefs(c).getString("type", TYPE_WAKE); }
     public static long since(Context c) { return prefs(c).getLong("since", 0); }
+    public static String label(Context c) { return prefs(c).getString("label", ""); }
     public static String ids(Context c) { return prefs(c).getString("ids", ""); }
 
     public static boolean hasId(Context c, long id) {
@@ -56,7 +57,7 @@ public final class Store {
 
     public static synchronized String clear(Context c) {
         String ids = ids(c);
-        prefs(c).edit().putBoolean("active", false).putString("ids", "").commit();
+        prefs(c).edit().putBoolean("active", false).putString("ids", "").remove("label").commit();
         return ids;
     }
 

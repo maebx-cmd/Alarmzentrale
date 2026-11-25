@@ -32,6 +32,7 @@ import java.nio.charset.StandardCharsets;
 public class PollService extends Service {
     public static final String ACTION_STOP_ALARM = "at.luyten.alarmzentrale.STOP";
     public static final String ACTION_TEST = "at.luyten.alarmzentrale.TEST";
+    public static final String ACTION_RING = "at.luyten.alarmzentrale.RING";
     public static final String EXTRA_TYPE = "type";
 
     static final String CH_SERVICE = "verbindung";
@@ -90,6 +91,7 @@ public class PollService extends Service {
 
         running = true;
         KeepAlive.schedule(this);
+        LocalAlarms.scheduleAll(this); // Wecker sicherheitshalber neu stellen
         pollThread = new Thread(this::pollLoop, "alarm-poll");
         pollThread.start();
 
@@ -119,6 +121,8 @@ public class PollService extends Service {
     public int onStartCommand(Intent intent, int flags, int startId) {
         if (intent != null && ACTION_STOP_ALARM.equals(intent.getAction())) {
             stopAlarm("stopped");
+        } else if (intent != null && ACTION_RING.equals(intent.getAction())) {
+            startRinging(); // lokaler Wecker (Zustand bereits gespeichert)
         } else if (intent != null && ACTION_TEST.equals(intent.getAction())) {
             String t = intent.getStringExtra(EXTRA_TYPE);
             Store.activate(this, testId--, Store.TYPE_ALARM.equals(t) ? Store.TYPE_ALARM : Store.TYPE_WAKE);
@@ -183,6 +187,7 @@ public class PollService extends Service {
             String type = Store.TYPE_ALARM.equals(c.optString("type")) ? Store.TYPE_ALARM : Store.TYPE_WAKE;
             if (!Store.hasId(this, id)) {
                 Store.activate(this, id, type);
+                Store.prefs(this).edit().remove("label").commit();
                 main.post(this::startRinging);
             }
             Store.queueAck(this, id, "received");
@@ -248,6 +253,8 @@ public class PollService extends Service {
     }
 
     // ================= Alarm =================
+    public void kickRinging() { main.post(this::startRinging); }
+
     void startRinging() {
         if (!Store.active(this)) return;
         player.setType(Store.type(this));

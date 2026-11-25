@@ -36,6 +36,8 @@ public class MainActivity extends Activity {
     private EditText urlField;
     private LinearLayout permBox;
     private TextView stopInfo;
+    private LinearLayout alarmBox;
+    private TextView nextInfo;
     private float d;
 
     private static final int BG = 0xFF111418, CARD = 0xFF1B2027, TXT = 0xFFEEF1F4, MUT = 0xFF8C96A3;
@@ -67,6 +69,17 @@ public class MainActivity extends Activity {
         status = text("…", 18, TXT);
         status.setTypeface(Typeface.DEFAULT_BOLD);
         c1.addView(status);
+
+        // Wecker (offline)
+        LinearLayout cw = card(col);
+        cw.addView(text("Wecker – funktioniert auch ohne Internet", 14, MUT));
+        nextInfo = text("", 15, TXT);
+        nextInfo.setPadding(0, px(4), 0, px(4));
+        cw.addView(nextInfo);
+        alarmBox = new LinearLayout(this);
+        alarmBox.setOrientation(LinearLayout.VERTICAL);
+        cw.addView(alarmBox);
+        cw.addView(button("+ Wecker hinzufügen", 0xFF2F7FE0, v -> editAlarm(null)));
 
         // Worker-Adresse
         LinearLayout c2 = card(col);
@@ -133,6 +146,91 @@ public class MainActivity extends Activity {
                 .show();
     }
 
+    // ---------- Wecker ----------
+    private void refreshAlarms() {
+        alarmBox.removeAllViews();
+        java.util.List<LocalAlarms.Alarm> list = LocalAlarms.load(this);
+        if (list.isEmpty()) alarmBox.addView(text("Noch kein Wecker gestellt.", 15, MUT));
+        for (LocalAlarms.Alarm a : list) {
+            LinearLayout row = new LinearLayout(this);
+            row.setOrientation(LinearLayout.HORIZONTAL);
+            row.setGravity(Gravity.CENTER_VERTICAL);
+            row.setPadding(0, px(8), 0, px(8));
+            LinearLayout txt = new LinearLayout(this);
+            txt.setOrientation(LinearLayout.VERTICAL);
+            TextView t = text(a.time(), 32, a.on ? TXT : MUT);
+            t.setTypeface(Typeface.DEFAULT_BOLD);
+            txt.addView(t);
+            txt.addView(text(a.daysText(), 14, MUT));
+            row.addView(txt, new LinearLayout.LayoutParams(0, -2, 1f));
+            android.widget.Switch sw = new android.widget.Switch(this);
+            sw.setChecked(a.on);
+            sw.setScaleX(1.3f); sw.setScaleY(1.3f);
+            sw.setOnCheckedChangeListener((b, on) -> {
+                java.util.List<LocalAlarms.Alarm> l = LocalAlarms.load(this);
+                for (LocalAlarms.Alarm x : l) if (x.id == a.id) x.on = on;
+                LocalAlarms.save(this, l);
+                refreshAlarms();
+            });
+            row.addView(sw);
+            row.setOnClickListener(v -> editAlarm(a));
+            row.setOnLongClickListener(v -> {
+                new AlertDialog.Builder(this).setTitle("Wecker " + a.time() + " löschen?")
+                        .setPositiveButton("Löschen", (d, w) -> {
+                            java.util.List<LocalAlarms.Alarm> l = LocalAlarms.load(this);
+                            l.removeIf(x -> x.id == a.id);
+                            LocalAlarms.save(this, l);
+                            refreshAlarms();
+                        })
+                        .setNegativeButton("Abbrechen", null).show();
+                return true;
+            });
+            alarmBox.addView(row);
+        }
+        LocalAlarms.Alarm n = LocalAlarms.nextAlarm(this);
+        if (n == null) nextInfo.setText("Kein Wecker aktiv");
+        else {
+            long t = LocalAlarms.next(n, System.currentTimeMillis());
+            long mins = Math.max(0, (t - System.currentTimeMillis()) / 60000 + 1);
+            String day = new java.text.SimpleDateFormat("EEEE", java.util.Locale.GERMANY).format(new java.util.Date(t));
+            nextInfo.setText("Nächster Wecker: " + day + " " + n.time() + "  (in " + (mins / 60) + " h " + (mins % 60) + " min)");
+        }
+        if (list.size() > 0) alarmBox.addView(text("Antippen = ändern · lange drücken = löschen", 12, MUT));
+    }
+
+    private void editAlarm(LocalAlarms.Alarm existing) {
+        int h = existing != null ? existing.hour : 6, m = existing != null ? existing.minute : 0;
+        android.app.TimePickerDialog tp = new android.app.TimePickerDialog(this, android.R.style.Theme_Material_Dialog_Alert,
+                (view, hour, minute) -> pickDays(existing, hour, minute), h, m, true);
+        tp.setTitle(existing == null ? "Neuer Wecker" : "Wecker ändern");
+        tp.show();
+    }
+
+    private void pickDays(LocalAlarms.Alarm existing, int hour, int minute) {
+        final boolean[] sel = new boolean[7];
+        int days = existing != null ? existing.days : 0;
+        for (int i = 0; i < 7; i++) sel[i] = (days & (1 << i)) != 0;
+        String[] names = {"Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"};
+        new AlertDialog.Builder(this)
+                .setTitle("Wiederholen? (nichts gewählt = einmalig)")
+                .setMultiChoiceItems(names, sel, (d, i, on) -> sel[i] = on)
+                .setPositiveButton("Speichern", (d, w) -> {
+                    int mask = 0;
+                    for (int i = 0; i < 7; i++) if (sel[i]) mask |= 1 << i;
+                    java.util.List<LocalAlarms.Alarm> l = LocalAlarms.load(this);
+                    LocalAlarms.Alarm a = null;
+                    if (existing != null) for (LocalAlarms.Alarm x : l) if (x.id == existing.id) a = x;
+                    if (a == null) { a = new LocalAlarms.Alarm(); a.id = LocalAlarms.newId(l); l.add(a); }
+                    a.hour = hour; a.minute = minute; a.days = mask; a.on = true;
+                    LocalAlarms.save(this, l);
+                    refreshAlarms();
+                    if (!KeepAlive.canSchedule(this)) toast("Achtung: Berechtigung „Wecker & Erinnerungen“ fehlt");
+                    else toast("Wecker gestellt: " + a.time() + " " + a.daysText());
+                })
+                .setNegativeButton("Abbrechen", null)
+                .show();
+    }
+
     // ---------- Berechtigungen ----------
     private static class Perm {
         final String name; final boolean ok; final Runnable fix;
@@ -187,6 +285,7 @@ public class MainActivity extends Activity {
     }
 
     private void refresh() {
+        refreshAlarms();
         permBox.removeAllViews();
         for (Perm p : perms()) {
             LinearLayout row = new LinearLayout(this);
