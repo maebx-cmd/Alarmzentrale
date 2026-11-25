@@ -197,7 +197,7 @@ public class AlarmActivity extends Activity {
                 if (scanner != null) scanner.pause();
                 Intent i = new Intent(AlarmActivity.this, PollService.class).setAction(PollService.ACTION_STOP_ALARM);
                 try { startService(i); } catch (Exception e) {
-                    PollService s = PollService.instance; if (s != null) s.stopAlarm();
+                    PollService s = PollService.instance; if (s != null) s.stopAlarm("stopped");
                 }
                 visible = false;
                 finishAndRemoveTask();

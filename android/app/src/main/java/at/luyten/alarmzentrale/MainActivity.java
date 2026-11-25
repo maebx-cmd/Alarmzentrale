@@ -46,6 +46,8 @@ public class MainActivity extends Activity {
         d = getResources().getDisplayMetrics().density;
         getWindow().setStatusBarColor(BG);
         getWindow().setNavigationBarColor(BG);
+        // Solange die App offen ist, geht der Bildschirm nie aus (unabhängig vom System-Timeout)
+        getWindow().addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
 
         ScrollView sv = new ScrollView(this);
         sv.setBackgroundColor(BG);
@@ -89,6 +91,14 @@ public class MainActivity extends Activity {
         permBox = new LinearLayout(this);
         permBox.setOrientation(LinearLayout.VERTICAL);
         c3.addView(permBox);
+
+        // Huawei / Honor
+        String m = (Build.MANUFACTURER + " " + Build.BRAND).toLowerCase();
+        if (m.contains("huawei") || m.contains("honor")) {
+            LinearLayout ch = card(col);
+            ch.addView(text("Huawei: Unter „App-Start“ die Alarmzentrale auf „Manuell verwalten“ stellen und alle drei Schalter einschalten (Automatischer Start, Sekundärer Start, Im Hintergrund ausführen).", 14, MUT));
+            ch.addView(button("Huawei App-Start öffnen", 0xFF3A4350, v -> openHuawei()));
+        }
 
         // Test
         LinearLayout c4 = card(col);
@@ -144,10 +154,29 @@ public class MainActivity extends Activity {
                 () -> open(new Intent(Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS))));
         l.add(new Perm("Akku-Optimierung aus (läuft dauerhaft)", pm.isIgnoringBatteryOptimizations(getPackageName()),
                 () -> open(new Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:" + getPackageName())))));
+        if (Build.VERSION.SDK_INT >= 31)
+            l.add(new Perm("Wecker & Erinnerungen (Wachhalter)", KeepAlive.canSchedule(this),
+                    () -> open(new Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM, Uri.parse("package:" + getPackageName())))));
         if (Build.VERSION.SDK_INT >= 34)
             l.add(new Perm("Vollbild-Benachrichtigungen", nm.canUseFullScreenIntent(),
                     () -> open(new Intent(Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT, Uri.parse("package:" + getPackageName())))));
         return l;
+    }
+
+    private void openHuawei() {
+        String[][] targets = {
+                {"com.huawei.systemmanager", "com.huawei.systemmanager.startupmgr.ui.StartupNormalAppListActivity"},
+                {"com.huawei.systemmanager", "com.huawei.systemmanager.appcontrol.activity.StartupAppControlActivity"},
+                {"com.huawei.systemmanager", "com.huawei.systemmanager.optimize.process.ProtectActivity"},
+                {"com.hihonor.systemmanager", "com.hihonor.systemmanager.startupmgr.ui.StartupNormalAppListActivity"},
+        };
+        for (String[] t : targets) {
+            try {
+                startActivity(new Intent().setComponent(new android.content.ComponentName(t[0], t[1])));
+                return;
+            } catch (Exception ignored) {}
+        }
+        open(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + getPackageName())));
     }
 
     private void open(Intent i) {

@@ -32,6 +32,15 @@ Jeder Push in `android/` baut die APK über GitHub Actions. Download: Repo → *
 Samsung: zusätzlich Einstellungen → Akku → Hintergrundnutzungslimits → Alarmzentrale bei den **nie schlafenden Apps** eintragen.
 Xiaomi/Huawei: Autostart erlauben, Akku-Sparmodus „Keine Einschränkungen“.
 
+## Wachhalten (auch Huawei)
+- Dauerdienst mit Wakelock (auf Huawei/Honor unter einem vom System geduldeten Namen) + WLAN-Sperre, Abfrage alle 5 s.
+- Zusätzlich ein System-Wecker (`setAlarmClock`) als Wachhalter: Er feuert nur, wenn die Abfrage im Tiefschlaf hängen bleibt, weckt das Gerät, startet den Dienst bei Bedarf neu und fragt sofort ab. Deshalb zeigt das Handy einen „nächsten Wecker“ in ≤ 30 s an.
+- Solange die App offen ist, geht der Bildschirm nicht aus.
+- Die Statusseite zeigt „erreichbar“, solange die letzte Meldung jünger als 75 s ist.
+
+## Notfall-Storno
+Auf der Statusseite erscheint bei einer laufenden oder noch nicht zugestellten Auslösung „Notfall: aus der Ferne abstellen“ (eigener 4-stelliger PIN, nur als Hash im Worker). Das Gerät schaltet beim nächsten Abruf ab, die Seite zeigt „Aus der Ferne abgestellt“.
+
 ## Verhalten beim Alarm
 - Eigener Sirenenton (Alarm) bzw. schrilles Piepen (Wecken) über den Alarm-Kanal, Lautstärke wird alle 250 ms auf Maximum zurückgesetzt.
 - Stumm- und Nicht-stören-Modus werden ausgehebelt.

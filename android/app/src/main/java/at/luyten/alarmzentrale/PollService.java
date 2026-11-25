@@ -73,7 +73,7 @@ public class PollService extends Service {
         player = new AlarmPlayer(this);
 
         PowerManager pm = (PowerManager) getSystemService(POWER_SERVICE);
-        cpuLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "alarmzentrale:poll");
+        cpuLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, wakeTag("poll"));
         cpuLock.setReferenceCounted(false);
         cpuLock.acquire();
         try {
@@ -89,16 +89,36 @@ public class PollService extends Service {
         else registerReceiver(screenOff, f);
 
         running = true;
+        KeepAlive.schedule(this);
         pollThread = new Thread(this::pollLoop, "alarm-poll");
         pollThread.start();
 
         if (Store.active(this)) startRinging(); // z. B. nach Neustart während eines Alarms
     }
 
+    /** Huawei/Honor (PowerGenie) beendet Apps mit Dauer-Wakelock – außer bei bestimmten System-Tags. */
+    static String wakeTag(String what) {
+        String m = (Build.MANUFACTURER + " " + Build.BRAND).toLowerCase();
+        if (m.contains("huawei") || m.contains("honor")) return "LocationManagerService";
+        return "alarmzentrale:" + what;
+    }
+
+    private final Object sleeper = new Object();
+
+    /** Sofort eine Abfrage auslösen (vom Wachhalter). */
+    public void kick() {
+        try { if (cpuLock != null && !cpuLock.isHeld()) cpuLock.acquire(); } catch (Exception ignored) {}
+        synchronized (sleeper) { sleeper.notifyAll(); }
+        if (pollThread == null || !pollThread.isAlive()) {
+            pollThread = new Thread(this::pollLoop, "alarm-poll");
+            pollThread.start();
+        }
+    }
+
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         if (intent != null && ACTION_STOP_ALARM.equals(intent.getAction())) {
-            stopAlarm();
+            stopAlarm("stopped");
         } else if (intent != null && ACTION_TEST.equals(intent.getAction())) {
             String t = intent.getStringExtra(EXTRA_TYPE);
             Store.activate(this, testId--, Store.TYPE_ALARM.equals(t) ? Store.TYPE_ALARM : Store.TYPE_WAKE);
@@ -139,8 +159,10 @@ public class PollService extends Service {
                 statusText = "Keine Verbindung: " + (e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage());
                 updateServiceNotification(false);
             }
+            // Wachhalter nach hinten schieben: er feuert nur, wenn diese Schleife im Tiefschlaf hängen bleibt
+            KeepAlive.scheduleIfDue(this);
             long wait = Store.POLL_MS - (SystemClock.elapsedRealtime() - t0);
-            if (wait > 0) try { Thread.sleep(wait); } catch (InterruptedException ignored) {}
+            if (wait > 0) synchronized (sleeper) { try { sleeper.wait(wait); } catch (InterruptedException ignored) {} }
         }
     }
 
@@ -165,6 +187,18 @@ public class PollService extends Service {
             }
             Store.queueAck(this, id, "received");
             flushAcks();
+        }
+        // Notfall-Storno aus der Ferne
+        org.json.JSONArray cancel = r.optJSONArray("cancel");
+        if (cancel != null && cancel.length() > 0) {
+            boolean hit = false;
+            for (int k = 0; k < cancel.length(); k++) {
+                long id = cancel.getLong(k);
+                if (Store.hasId(this, id)) hit = true;
+                else Store.queueAck(this, id, "cancelled");
+            }
+            if (hit) main.post(() -> stopAlarm("cancelled"));
+            else flushAcks();
         }
     }
 
@@ -224,10 +258,10 @@ public class PollService extends Service {
         main.postDelayed(watchdog, 1000);
     }
 
-    void stopAlarm() {
+    void stopAlarm(String state) {
         String ids = Store.clear(this);
         for (String s : ids.split(",")) {
-            try { Store.queueAck(this, Long.parseLong(s), "stopped"); } catch (Exception ignored) {}
+            try { Store.queueAck(this, Long.parseLong(s), state); } catch (Exception ignored) {}
         }
         main.removeCallbacks(watchdog);
         player.stop();

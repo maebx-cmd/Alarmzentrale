@@ -4,8 +4,9 @@
 
 const PIN_SALT = "alarmzentrale-v1:";
 const PIN_HASH = "29b7ffa71bf1086505fc836caa35af94b20c2027377b48e37a07e1f158be0491"; // SHA-256(SALT + PIN)
+const CANCEL_HASH = "6d17b622037d33a9157ab235194f0dfd1ead4597d46849945cd59378bccc6f13"; // SHA-256(SALT + "storno:" + Notfall-PIN)
 const DEVICE_KEY = "M6e_iIBbd2IgRQS8KQtDMOhF";   // muss mit der App übereinstimmen
-const ONLINE_MS = 25_000;          // Gerät gilt als erreichbar, wenn letzte Abfrage jünger ist
+const ONLINE_MS = 75_000;          // Gerät gilt als erreichbar, wenn letzte Abfrage jünger ist (im Tiefschlaf meldet es sich alle 30 s)
 const EXPIRE_MS = 15 * 60_000;     // nicht zugestellte Auslösungen verfallen nach 15 min
 const MAX_FAILS = 10;              // falsche PINs pro 10 Minuten, danach Sperre
 const FAIL_WINDOW = 10 * 60_000;
@@ -19,6 +20,10 @@ async function init(db) {
     db.prepare("CREATE INDEX IF NOT EXISTS cmd_open ON cmd(received)"),
     db.prepare("CREATE TABLE IF NOT EXISTS fails (t INTEGER NOT NULL)"),
   ]);
+  // Spalten für die Notfall-Stornierung (bei bestehender Datenbank nachrüsten)
+  for (const col of ["cancel_req INTEGER", "stop_mode TEXT"]) {
+    try { await db.prepare("ALTER TABLE cmd ADD COLUMN " + col).run(); } catch (e) { /* existiert schon */ }
+  }
   ready = true;
 }
 
@@ -44,7 +49,7 @@ async function getKv(db) {
 }
 
 async function lastCmd(db) {
-  return await db.prepare("SELECT id, type, created, received, stopped, expired FROM cmd ORDER BY id DESC LIMIT 1").first();
+  return await db.prepare("SELECT id, type, created, received, stopped, expired, cancel_req, stop_mode FROM cmd ORDER BY id DESC LIMIT 1").first();
 }
 
 export default {
@@ -97,6 +102,25 @@ export default {
         return json({ ok: true, id: r.meta.last_row_id, online: now - Number(kv.last_seen || 0) < ONLINE_MS });
       }
 
+      // Notfall: laufenden oder noch nicht zugestellten Alarm aus der Ferne stornieren
+      if (path === "/api/cancel" && req.method === "POST") {
+        const body = await req.json().catch(() => ({}));
+        const fails = await db.prepare("SELECT COUNT(*) AS n FROM fails WHERE t > ?").bind(now - FAIL_WINDOW).first();
+        if (fails.n >= MAX_FAILS) return json({ error: "Zu viele falsche PIN-Eingaben. Bitte 10 Minuten warten." }, 429);
+        const pin = String(body.pin || "");
+        if (!/^\d{4}$/.test(pin) || (await sha256hex(PIN_SALT + "storno:" + pin)) !== CANCEL_HASH) {
+          await db.prepare("INSERT INTO fails (t) VALUES (?)").bind(now).run();
+          return json({ error: "Falscher Notfall-PIN" }, 403);
+        }
+        const [a, b] = await db.batch([
+          // noch nicht abgeholt → gar nicht mehr zustellen
+          db.prepare("UPDATE cmd SET cancel_req = ?, stopped = ?, stop_mode = 'remote' WHERE received IS NULL AND expired IS NULL AND stopped IS NULL").bind(now, now),
+          // klingelt bereits → Gerät beim nächsten Abruf abschalten lassen
+          db.prepare("UPDATE cmd SET cancel_req = ? WHERE received IS NOT NULL AND stopped IS NULL").bind(now),
+        ]);
+        return json({ ok: true, affected: (a.meta.changes || 0) + (b.meta.changes || 0) });
+      }
+
       // ---------- Gerät ----------
       if (path === "/api/poll" && req.method === "GET") {
         if (url.searchParams.get("key") !== DEVICE_KEY) return json({ error: "forbidden" }, 403);
@@ -110,8 +134,9 @@ export default {
           db.prepare("INSERT INTO kv (k, v) VALUES ('ringing', ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v").bind(ringing),
           db.prepare("UPDATE cmd SET expired = ? WHERE received IS NULL AND expired IS NULL AND created < ?").bind(now, now - EXPIRE_MS),
         ]);
-        const cmd = await db.prepare("SELECT id, type, created FROM cmd WHERE received IS NULL AND expired IS NULL ORDER BY id LIMIT 1").first();
-        return json({ now, cmd: cmd || null });
+        const cmd = await db.prepare("SELECT id, type, created FROM cmd WHERE received IS NULL AND expired IS NULL AND stopped IS NULL ORDER BY id LIMIT 1").first();
+        const { results: cancel } = await db.prepare("SELECT id FROM cmd WHERE cancel_req IS NOT NULL AND stopped IS NULL").all();
+        return json({ now, cmd: cmd || null, cancel: cancel.map(r => r.id) });
       }
 
       if (path === "/api/ack" && req.method === "POST") {
@@ -122,8 +147,9 @@ export default {
         if (!(id > 0)) return json({ ok: true }); // lokaler Test-Alarm
         if (body.state === "received") {
           await db.prepare("UPDATE cmd SET received = COALESCE(received, ?) WHERE id = ?").bind(t, id).run();
-        } else if (body.state === "stopped") {
-          await db.prepare("UPDATE cmd SET received = COALESCE(received, ?), stopped = COALESCE(stopped, ?) WHERE id = ?").bind(t, t, id).run();
+        } else if (body.state === "stopped" || body.state === "cancelled") {
+          const mode = body.state === "cancelled" ? "remote" : "qr";
+          await db.prepare("UPDATE cmd SET received = COALESCE(received, ?), stopped = COALESCE(stopped, ?), stop_mode = COALESCE(stop_mode, ?) WHERE id = ?").bind(t, t, mode, id).run();
         }
         return json({ ok: true });
       }
