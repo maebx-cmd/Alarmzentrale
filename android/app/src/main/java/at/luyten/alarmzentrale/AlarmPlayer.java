@@ -211,26 +211,46 @@ public class AlarmPlayer {
                 boolean alarm = Store.TYPE_ALARM.equals(type);
                 for (int i = 0; i < buf.length; i++, n++) {
                     double ts = n / (double) sr;
-                    double f, amp;
+                    double s;
                     if (alarm) {
                         // Sirene: schnelles Auf- und Abschwellen 650–1750 Hz
                         double p = ts % 0.9 / 0.9;
-                        f = p < 0.5 ? 650 + 2200 * p : 1750 - 2200 * (p - 0.5);
-                        amp = 1.0;
+                        double f = p < 0.5 ? 650 + 2200 * p : 1750 - 2200 * (p - 0.5);
+                        phase += 2 * Math.PI * f / sr;
+                        if (phase > 2 * Math.PI) phase -= 2 * Math.PI;
+                        phase2 += 2 * Math.PI * f * 1.5 / sr;
+                        if (phase2 > 2 * Math.PI) phase2 -= 2 * Math.PI;
+                        s = Math.sin(phase) * 3.0 + Math.sin(phase2) * 0.8;
+                        if (s > 1) s = 1; else if (s < -1) s = -1;
                     } else {
-                        // Weckton: 4 schrille Pieptöne, kurze Pause
-                        double p = ts % 1.0;
-                        amp = (p < 0.62 && (p % 0.155) < 0.1) ? 1.0 : 0.0;
-                        f = 2900;
+                        // Weckton „böse“: ohne Pause im Wechsel
+                        //  0,00–0,48 s: Stakkato-Piepen 16/s, 3150/3950 Hz, Rechteck + verstimmter Zweitton
+                        //  0,48–1,00 s: Schnarr-Summer, Rechteck 440 + 466 Hz (Halbton-Reibung), 55 Hz zerhackt
+                        double cyc = ts % 1.0;
+                        if (cyc < 0.48) {
+                            int pulse = (int) (cyc / 0.06);
+                            boolean on = (cyc % 0.06) < 0.042;
+                            double f = (pulse % 2 == 0) ? 3150 : 3950;
+                            phase += 2 * Math.PI * f / sr;
+                            if (phase > 2 * Math.PI) phase -= 2 * Math.PI;
+                            phase2 += 2 * Math.PI * f * 1.06 / sr;
+                            if (phase2 > 2 * Math.PI) phase2 -= 2 * Math.PI;
+                            double x = phase < Math.PI ? 1 : -1;
+                            double y = phase2 < Math.PI ? 1 : -1;
+                            s = on ? (x * 0.6 + y * 0.6) : 0;
+                        } else {
+                            phase += 2 * Math.PI * 440 / sr;
+                            if (phase > 2 * Math.PI) phase -= 2 * Math.PI;
+                            phase2 += 2 * Math.PI * 466 / sr;
+                            if (phase2 > 2 * Math.PI) phase2 -= 2 * Math.PI;
+                            double x = phase < Math.PI ? 1 : -1;
+                            double y = phase2 < Math.PI ? 1 : -1;
+                            boolean chop = ((long) (ts * 110)) % 2 == 0;
+                            s = (x * 0.7 + y * 0.7) * (chop ? 1.0 : 0.35);
+                        }
+                        if (s > 1) s = 1; else if (s < -1) s = -1;
                     }
-                    phase += 2 * Math.PI * f / sr;
-                    if (phase > 2 * Math.PI) phase -= 2 * Math.PI;
-                    phase2 += 2 * Math.PI * f * 1.5 / sr;
-                    if (phase2 > 2 * Math.PI) phase2 -= 2 * Math.PI;
-                    // stark übersteuert → fast Rechteck, wirkt deutlich lauter
-                    double s = Math.sin(phase) * 3.0 + Math.sin(phase2) * 0.8;
-                    if (s > 1) s = 1; else if (s < -1) s = -1;
-                    buf[i] = (short) (s * amp * 32000);
+                    buf[i] = (short) (s * 32700);
                 }
                 t.write(buf, 0, buf.length);
             }
