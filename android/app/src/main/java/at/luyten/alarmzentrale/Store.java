@@ -6,7 +6,7 @@ import android.content.SharedPreferences;
 /** Einstellungen und Alarmzustand – im gerätegeschützten Speicher, damit alles schon vor dem ersten Entsperren nach einem Neustart läuft. */
 public final class Store {
     public static final String DEVICE_KEY = "M6e_iIBbd2IgRQS8KQtDMOhF";
-    public static final String DEFAULT_URL = "https://alarmzentrale.DEINNAME.workers.dev";
+    public static final String DEFAULT_URL = "https://alarmzentrale.ma-eberharter-94.workers.dev";
     public static final String DEFAULT_STOP_CODE = "AZ-STOP-uSk2NyKwCO7g";
     public static final long POLL_MS = 5000;
 
