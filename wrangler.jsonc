@@ -1,0 +1,13 @@
+{
+  // Nur nötig, wenn per Wrangler-CLI deployt wird. Im Dashboard reicht die Bindung.
+  "name": "alarmzentrale",
+  "main": "worker/worker.js",
+  "compatibility_date": "2025-01-01",
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "alarmzentrale",
+      "database_id": "d170f953-7996-4648-a53e-a8cd04706c12"
+    }
+  ]
+}
