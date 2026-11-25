@@ -1,0 +1,45 @@
+plugins { id 'com.android.application' }
+
+android {
+    namespace 'at.luyten.alarmzentrale'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId 'at.luyten.alarmzentrale'
+        minSdk 26
+        targetSdk 34
+        versionCode 1
+        versionName '1.0'
+    }
+
+    signingConfigs {
+        fest {
+            storeFile file('alarmzentrale.jks')
+            storePassword 'alarmzentrale'
+            keyAlias 'alarmzentrale'
+            keyPassword 'alarmzentrale'
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.fest
+        }
+        debug { signingConfig signingConfigs.fest }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    lint {
+        checkReleaseBuilds false
+        abortOnError false
+    }
+}
+
+dependencies {
+    implementation 'com.journeyapps:zxing-android-embedded:4.3.0'
+}

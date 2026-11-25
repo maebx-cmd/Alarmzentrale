@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#111418">
+<meta name="robots" content="noindex">
+<title>Alarmzentrale</title>
+<style>
+  :root { --bg:#111418; --card:#1b2027; --line:#2a313b; --txt:#eef1f4; --mut:#8c96a3; --red:#e5322d; --green:#22c55e; --blue:#2f7fe0; }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin:0; background:var(--bg); color:var(--txt); font:17px/1.4 -apple-system, "Segoe UI", Roboto, sans-serif; }
+  main { max-width:460px; margin:0 auto; padding:calc(18px + env(safe-area-inset-top)) 18px calc(24px + env(safe-area-inset-bottom)); }
+  h1 { font-size:15px; letter-spacing:.14em; text-transform:uppercase; color:var(--mut); margin:4px 0 16px; font-weight:600; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:16px; padding:18px; margin-bottom:16px; }
+  .status { display:flex; align-items:center; gap:14px; }
+  .dot { width:22px; height:22px; border-radius:50%; flex:none; background:#555; box-shadow:0 0 0 4px rgba(255,255,255,.04); }
+  .dot.on { background:var(--green); box-shadow:0 0 14px var(--green); }
+  .dot.off { background:var(--red); box-shadow:0 0 14px var(--red); }
+  .st-title { font-size:21px; font-weight:700; }
+  .st-sub { color:var(--mut); font-size:14px; margin-top:2px; }
+  button.big { display:block; width:100%; border:0; border-radius:16px; padding:22px 16px; font-size:21px; font-weight:800; color:#fff; margin-bottom:14px; cursor:pointer; letter-spacing:.02em; }
+  button.big:active { transform:scale(.98); }
+  #btnAlarm { background:var(--red); }
+  #btnWake { background:var(--blue); }
+  .warn { color:#f5b942; font-size:14px; margin:-4px 2px 14px; display:none; }
+  .last h2 { font-size:13px; letter-spacing:.1em; text-transform:uppercase; color:var(--mut); margin:0 0 10px; font-weight:600; }
+  .step { display:flex; justify-content:space-between; padding:6px 0; border-top:1px solid var(--line); font-size:15px; }
+  .step:first-of-type { border-top:0; }
+  .step span:last-child { color:var(--mut); }
+  .ok { color:var(--green) !important; }
+  .bad { color:var(--red) !important; }
+  /* PIN-Dialog */
+  #pin { position:fixed; inset:0; background:rgba(0,0,0,.72); display:none; align-items:flex-end; justify-content:center; z-index:9; }
+  #pin.show { display:flex; }
+  .sheet { background:var(--card); width:100%; max-width:460px; border-radius:22px 22px 0 0; padding:20px 20px calc(20px + env(safe-area-inset-bottom)); }
+  .sheet h3 { margin:0; text-align:center; font-size:19px; }
+  .sheet .hint { text-align:center; color:var(--mut); font-size:14px; margin:4px 0 14px; min-height:20px; }
+  .dots { display:flex; justify-content:center; gap:14px; margin-bottom:18px; }
+  .dots i { width:16px; height:16px; border-radius:50%; border:2px solid var(--mut); }
+  .dots i.f { background:var(--txt); border-color:var(--txt); }
+  .dots.shake { animation:sh .35s; }
+  @keyframes sh { 25%{transform:translateX(-8px)} 75%{transform:translateX(8px)} }
+  .pad { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; }
+  .pad button { border:0; border-radius:14px; background:#262d36; color:var(--txt); font-size:26px; padding:16px 0; cursor:pointer; }
+  .pad button:active { background:#333c48; }
+  .pad .fn { font-size:16px; background:transparent; color:var(--mut); }
+  .foot { color:var(--mut); font-size:12px; text-align:center; margin-top:10px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Alarmzentrale</h1>
+
+  <div class="card status">
+    <div id="dot" class="dot"></div>
+    <div>
+      <div id="stTitle" class="st-title">Verbinde …</div>
+      <div id="stSub" class="st-sub">&nbsp;</div>
+    </div>
+  </div>
+
+  <button id="btnAlarm" class="big">Alarm auslösen</button>
+  <button id="btnWake" class="big">Wecken</button>
+  <div id="warn" class="warn">Gerät derzeit nicht erreichbar – die Auslösung wird zugestellt, sobald es sich meldet (max. 15 min).</div>
+
+  <div class="card last" id="lastCard" style="display:none">
+    <h2>Letzte Auslösung</h2>
+    <div id="lastBody"></div>
+  </div>
+
+  <div class="foot" id="foot"></div>
+</main>
+
+<div id="pin">
+  <div class="sheet">
+    <h3 id="pinTitle">PIN eingeben</h3>
+    <div class="hint" id="pinHint">6-stelliger PIN-Code</div>
+    <div class="dots" id="dots"><i></i><i></i><i></i><i></i><i></i><i></i></div>
+    <div class="pad" id="pad"></div>
+  </div>
+</div>
+
+<script>
+// ► Nach dem Deployen hier die Adresse deines Workers eintragen:
+const WORKER_URL = "https://alarmzentrale.DEINNAME.workers.dev";
+
+const $ = id => document.getElementById(id);
+const TYPE = { alarm: "Alarm", wake: "Wecken" };
+let pinType = null, pinVal = "", busy = false, lastOnline = null;
+
+const fmtTime = t => new Date(t).toLocaleTimeString("de-AT", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+const fmtDate = t => {
+  const d = new Date(t), today = new Date();
+  return d.toDateString() === today.toDateString() ? fmtTime(t)
+    : d.toLocaleDateString("de-AT", { day: "2-digit", month: "2-digit" }) + " " + fmtTime(t);
+};
+const ago = ms => ms < 60e3 ? `vor ${Math.max(1, Math.round(ms / 1e3))} s`
+  : ms < 3600e3 ? `vor ${Math.round(ms / 60e3)} min`
+  : ms < 86400e3 ? `vor ${Math.round(ms / 3600e3)} h` : `vor ${Math.round(ms / 86400e3)} Tagen`;
+
+async function refresh() {
+  try {
+    const r = await fetch(WORKER_URL + "/api/status", { cache: "no-store" });
+    const s = await r.json();
+    if (!r.ok) throw new Error(s.error || r.status);
+    lastOnline = s.online;
+    $("dot").className = "dot " + (s.online ? "on" : "off");
+    $("stTitle").textContent = s.online ? "Alarmierung möglich" : "Alarmierung nicht möglich";
+    const parts = [];
+    if (s.lastSeen) parts.push((s.online ? "Gerät erreichbar · " : "Zuletzt erreichbar ") + ago(s.now - s.lastSeen));
+    else parts.push("Gerät hat sich noch nie gemeldet");
+    if (s.battery != null && s.battery !== "" && s.lastSeen) parts.push(`Akku ${s.battery} %${s.charging ? " ⚡" : ""}`);
+    if (s.ringing) parts.push("klingelt gerade");
+    $("stSub").textContent = parts.join(" · ");
+    $("warn").style.display = s.online ? "none" : "block";
+    renderLast(s.last, s.now);
+    $("foot").textContent = s.locked ? "PIN-Eingabe wegen Fehlversuchen gesperrt (10 min)." : "";
+  } catch (e) {
+    lastOnline = null;
+    $("dot").className = "dot off";
+    $("stTitle").textContent = "Zentrale nicht erreichbar";
+    $("stSub").textContent = WORKER_URL.includes("DEINNAME") ? "WORKER_URL in index.html eintragen" : "Server antwortet nicht";
+  }
+}
+
+function renderLast(c, now) {
+  if (!c) { $("lastCard").style.display = "none"; return; }
+  $("lastCard").style.display = "block";
+  const row = (a, b, cls = "") => `<div class="step"><span>${a}</span><span class="${cls}">${b}</span></div>`;
+  let h = row(`<b>${TYPE[c.type] || c.type}</b> ausgelöst`, fmtDate(c.created));
+  if (c.received) h += row("Am Gerät empfangen", fmtDate(c.received), "ok");
+  else if (c.expired) h += row("Nicht zugestellt", "verfallen", "bad");
+  else h += row("Am Gerät empfangen", "warte …");
+  if (c.stopped) h += row("Per QR-Code abgeschaltet", fmtDate(c.stopped), "ok");
+  else if (c.received) h += row("Abgeschaltet", "klingelt noch", "bad");
+  $("lastBody").innerHTML = h;
+}
+
+// ---- PIN ----
+function buildPad() {
+  const keys = ["1","2","3","4","5","6","7","8","9","Abbr.","0","⌫"];
+  $("pad").innerHTML = keys.map(k => `<button class="${k.length > 1 ? "fn" : ""}" data-k="${k}">${k}</button>`).join("");
+  $("pad").addEventListener("click", e => {
+    const k = e.target.dataset && e.target.dataset.k; if (!k || busy) return;
+    if (k === "Abbr.") return closePin();
+    if (k === "⌫") pinVal = pinVal.slice(0, -1);
+    else if (pinVal.length < 6) pinVal += k;
+    drawDots();
+    if (pinVal.length === 6) submit();
+  });
+}
+function drawDots() { [...$("dots").children].forEach((d, i) => d.classList.toggle("f", i < pinVal.length)); }
+function openPin(type) {
+  pinType = type; pinVal = ""; drawDots();
+  $("pinTitle").textContent = type === "alarm" ? "Alarm auslösen" : "Wecken";
+  $("pinHint").textContent = "6-stelligen PIN-Code eingeben";
+  $("pinHint").className = "hint";
+  $("pin").classList.add("show");
+}
+function closePin() { $("pin").classList.remove("show"); pinVal = ""; busy = false; }
+
+async function submit() {
+  busy = true; $("pinHint").textContent = "Sende …";
+  try {
+    const r = await fetch(WORKER_URL + "/api/trigger", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type: pinType, pin: pinVal })
+    });
+    const s = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(s.error || ("Fehler " + r.status));
+    $("pinHint").textContent = (pinType === "alarm" ? "Alarm" : "Weckruf") + " gesendet ✓";
+    $("pinHint").className = "hint ok";
+    setTimeout(closePin, 900);
+    refresh();
+  } catch (e) {
+    $("pinHint").textContent = e.message; $("pinHint").className = "hint bad";
+    $("dots").classList.add("shake"); setTimeout(() => $("dots").classList.remove("shake"), 400);
+    pinVal = ""; drawDots(); busy = false;
+  }
+}
+$("pin").addEventListener("click", e => { if (e.target.id === "pin") closePin(); });
+document.addEventListener("keydown", e => {
+  if (!$("pin").classList.contains("show") || busy) return;
+  if (/^\d$/.test(e.key) && pinVal.length < 6) { pinVal += e.key; drawDots(); if (pinVal.length === 6) submit(); }
+  else if (e.key === "Backspace") { pinVal = pinVal.slice(0, -1); drawDots(); }
+  else if (e.key === "Escape") closePin();
+});
+
+$("btnAlarm").onclick = () => openPin("alarm");
+$("btnWake").onclick = () => openPin("wake");
+buildPad();
+refresh();
+setInterval(refresh, 3000);
+document.addEventListener("visibilitychange", () => { if (!document.hidden) refresh(); });
+</script>
+</body>
+</html>
