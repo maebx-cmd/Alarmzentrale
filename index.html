@@ -73,7 +73,7 @@
   <div id="warn" class="warn">Gerät derzeit nicht erreichbar – die Auslösung wird zugestellt, sobald es sich meldet (max. 15 min).</div>
 
   <div class="card last" id="lastCard" style="display:none">
-    <h2>Letzte Auslösung</h2>
+    <h2>Aktuelle Auslösung</h2>
     <div id="lastBody"></div>
     <button id="btnCancel">Notfall: aus der Ferne abstellen</button>
   </div>
@@ -134,7 +134,9 @@ async function refresh() {
 }
 
 function renderLast(c, now) {
-  if (!c) { $("lastCard").style.display = "none"; return; }
+  // Kein Verlauf: nur laufende Auslösungen zeigen, abgeschlossene noch 60 s lang
+  const doneAt = c && (c.stopped || c.expired);
+  if (!c || (doneAt && now - doneAt > 60e3)) { $("lastCard").style.display = "none"; return; }
   $("lastCard").style.display = "block";
   const row = (a, b, cls = "") => `<div class="step"><span>${a}</span><span class="${cls}">${b}</span></div>`;
   let h = row(`<b>${TYPE[c.type] || c.type}</b> ausgelöst`, fmtDate(c.created));
